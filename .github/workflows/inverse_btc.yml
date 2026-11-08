@@ -1,0 +1,40 @@
+name: Inverse BTC one percent rotation
+on:
+  pull_request:
+    paths:
+      - 'internal/simplebtc/**'
+      - 'cmd/inversebtctest/**'
+      - '.github/workflows/inverse_btc.yml'
+  workflow_dispatch:
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./internal/simplebtc/... ./cmd/inversebtctest/...
+      - run: mkdir -p results && go run ./cmd/inversebtctest --end 2026-11-07 --train-until 2026-08-08 > results/inverse_btc.json
+      - name: Print summary
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/simple_btc.json'))
+          lines=['# Contrarian BTC previous-day ±1% rotation, always invested','BTC completed UTC daily close; switch at next shared US market opening hourly candle; 10 bps each side.','']
+          for key in ('training','holdout'):
+            r=d[key]
+            lines.append(f"**{key}**: return {r['return_pct']:+.2f}%, max DD {r['max_drawdown_pct']:.2f}%, switches {r['switches']}, MSTR sessions {r['mstr_sessions']}, MSTZ sessions {r['mstz_sessions']}, cash sessions {r['cash_sessions']}, active {r['active']}.")
+          lines.append(f"Bars BTC {d['btc_bars']}, MSTR {d['mstr_bars']}, MSTZ {d['mstz_bars']}")
+          s='\n\n'.join(lines)+'\n'
+          print(s)
+          open('results/summary.md','w').write(s)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: inverse-btc-one-percent
+          path: results/
