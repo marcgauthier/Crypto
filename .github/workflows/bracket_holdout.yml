@@ -1,0 +1,65 @@
+name: Entry-only bracket three-month holdout
+on:
+  pull_request:
+    paths:
+      - 'internal/backtest/**'
+      - 'internal/scanner/**'
+      - '.github/workflows/bracket_holdout.yml'
+  workflow_dispatch:
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - name: Baseline close-based exits SOXL/SOXS
+        run: |
+          mkdir -p results
+          go run ./cmd/cryptoscan --pair SOXL:SOXS --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --exit-mode close --no-save --json > results/baseline-soxl-soxs.json
+      - name: Bracket exits SOXL/SOXS
+        run: |
+          go run ./cmd/cryptoscan --pair SOXL:SOXS --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --exit-mode bracket --stop-min 2 --stop-max 12 --stop-step 2 --no-save --json > results/bracket-soxl-soxs.json
+      - name: Baseline close-based exits MSTR/MSTZ
+        run: |
+          go run ./cmd/cryptoscan --pair MSTR:MSTZ --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --exit-mode close --no-save --json > results/baseline-mstr-mstz.json
+      - name: Bracket exits MSTR/MSTZ
+        run: |
+          go run ./cmd/cryptoscan --pair MSTR:MSTZ --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --exit-mode bracket --stop-min 2 --stop-max 12 --stop-step 2 --no-save --json > results/bracket-mstr-mstz.json
+      - name: Compare frozen rule outcomes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          lines=[
+            '# Entry signal + stop-loss/take-profit holdout',
+            'Training May 8–August 8 (exclusive), testing August 8–November 8 (exclusive), 2026 UTC.',
+            'Optimized train-only grid: drop 1–12% step 1, take-profit 1–16% step 1, stop-loss 2–12% step 2.',
+            '10 basis points costs per side; all-open positions marked to market. Stop-first if both exit levels touch one bar; gaps fill at open.',
+            '',
+            '| Symbol | Baseline test | Bracket test | Improvement (pp) | Entry drop | TP | SL | Bracket trades | Bracket max DD | Test buy & hold |',
+            '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+          ]
+          for tag in ('soxl-soxs','mstr-mstz'):
+            a=json.load(open('results/baseline-'+tag+'.json'))
+            b=json.load(open('results/bracket-'+tag+'.json'))
+            for old,new in zip(a['legs'], b['legs']):
+              if old['symbol']!=new['symbol']: raise ValueError('mismatched symbol')
+              x,y=old['out_of_sample'],new['out_of_sample']
+              p=new['best_parameters']
+              lines.append(f"| {new['symbol']} | {x['return_pct']:+.2f}% | {y['return_pct']:+.2f}% | {y['return_pct']-x['return_pct']:+.2f} | {p['drop_pct']:.0f}% | {p['gain_pct']:.0f}% | {p['stop_pct']:.0f}% | {y['trades']} | {y['max_drawdown_pct']:.2f}% | {y['buy_hold_pct']:+.2f}% |")
+            lines.append(f"\n{b['pair']}: baseline 50/50 = {a['combined_test_return_pct']:+.2f}%, bracket 50/50 = {b['combined_test_return_pct']:+.2f}% (bracket drawdown {b['combined_test_max_drawdown_pct']:.2f}%).\n")
+          lines.append('Important: hourly OHLC cannot determine the actual order of intrabar TP/SL touches; live 5-minute monitoring is not a historical intrabar equivalent.')
+          summary='\n'.join(lines)+'\n'
+          print(summary)
+          open('results/comparison.md','w').write(summary)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write(summary)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: entry-bracket-holdout
+          path: results/

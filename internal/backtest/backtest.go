@@ -13,6 +13,7 @@ import (
 type Params struct {
 	DropPct float64 `json:"drop_pct"`
 	GainPct float64 `json:"gain_pct"`
+	StopPct float64 `json:"stop_pct,omitempty"`
 }
 type Config struct {
 	Lookback   int
@@ -30,6 +31,7 @@ type Trade struct {
 	SellPrice float64   `json:"sell_price"`
 	ReturnPct float64   `json:"return_pct"`
 	HoldHours float64   `json:"hold_hours"`
+	ExitReason string `json:"exit_reason,omitempty"`
 }
 type Result struct {
 	Params         Params        `json:"params"`
