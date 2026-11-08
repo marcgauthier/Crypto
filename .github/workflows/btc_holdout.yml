@@ -1,0 +1,54 @@
+name: BTC-led MSTR/MSTZ out-of-sample test
+on:
+  pull_request:
+    paths:
+      - 'internal/btcstrategy/**'
+      - 'cmd/btcbacktest/**'
+      - '.github/workflows/btc_holdout.yml'
+  workflow_dispatch:
+jobs:
+  btc-holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - name: BTC-led backtest unit/race tests
+        run: go test -race ./internal/btcstrategy
+      - name: Optimize May-Aug, evaluate Aug-Nov BTC-led MSTR/MSTZ
+        run: |
+          mkdir -p results
+          go run ./cmd/btcbacktest --end 2026-11-07 --train-until 2026-08-08 --months 6 --cost-bps 10 --json > results/btc-led-mstr-mstz.json
+      - name: Publish result table
+        run: |
+          python3 - <<'PY'
+          import json, os
+          x=json.load(open('results/btc-led-mstr-mstz.json'))
+          tr,te,control=x['training'],x['out_of_sample'],x['fixed_rule_holdout']
+          p=tr['parameters']
+          content='\n'.join([
+            '# BTC-led MSTR/MSTZ three-month holdout',
+            'Train May 8-Aug 7, 2026; test Aug 8-Nov 7, 2026. No test data used to select rules.',
+            'BTC changes at completed 00:00 UTC daily close. Stock entry at first common regular-session hourly bar. Bracket TP/SL exits; stop-first on ambiguous bars, gaps at open; 10 bps each side.',
+            '',
+            '| Strategy | Train return | Test return | Test trades MSTR / MSTZ | Test max drawdown | Open at end |',
+            '|---|---:|---:|---:|---:|---|',
+            f"| Train-optimized BTC 7d ±{p['btc_7d_threshold_pct']:.1f}%, 1d ±{p['btc_1d_threshold_pct']:.1f}%, TP {p['take_profit_pct']:.1f}%, SL {p['stop_loss_pct']:.1f}% | {tr['return_pct']:+.2f}% | {te['return_pct']:+.2f}% | {te['mstr_trades']} / {te['mstz_trades']} | {te['max_drawdown_pct']:.2f}% | {te.get('active_symbol','cash')} |",
+            f"| Preset BTC 7d ±2%, 1d ±1%, TP 5%, SL 4% | — | {control['return_pct']:+.2f}% | {control['mstr_trades']} / {control['mstz_trades']} | {control['max_drawdown_pct']:.2f}% | {control.get('active_symbol','cash')} |",
+            '',
+            f"Input bars: BTC-USD {x['btc_hourly_bars']}, MSTR {x['mstr_hourly_bars']}, MSTZ {x['mstz_hourly_bars']}.",
+            'This is a single-account either/or rotation (not equal-weight independent MSTR/MSTZ). Leveraged inverse ETFs have path dependence. Hourly TP/SL cannot resolve exact intrabar price order. Research only; not live five-minute signals.',
+            ''
+          ])
+          print(content)
+          open('results/comparison.md','w').write(content)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(content)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: btc-led-holdout
+          path: results/
