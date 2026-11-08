@@ -27,7 +27,7 @@ jobs:
           for x in d['results']:
             if x['mode']=='daily' and x['reverse']:
               a,b=x['six_months'],x['buy_hold']
-              lines.append(f"{x['pair']} start {x['initial']}: rotation {a['return_pct']:+.2f}%, buyhold {b['return_pct']:+.2f}%, difference {a['return_pct']-b['return_pct']:+.2f}pp, rotation DD {a['max_drawdown_pct']:.2f}%, buyhold DD {b['max_drawdown_pct']:.2f}%, switches {a['switches']}")
+              lines.append(f"{x['pair']} start {x['initial']}: trailing {x['trailing']['return_pct']:+.2f}% (DD {x['trailing']['max_drawdown_pct']:.2f}%, switches {x['trailing']['switches']}), original {a['return_pct']:+.2f}% (DD {a['max_drawdown_pct']:.2f}%), hold {b['return_pct']:+.2f}%")
           s='\n'.join(lines)
           print(s)
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
