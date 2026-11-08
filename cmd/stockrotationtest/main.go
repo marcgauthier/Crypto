@@ -26,6 +26,7 @@ func run()error{
  b,err:=fetch("MSTZ");if err!=nil{return err}
  type row struct{
   Mode string `json:"mode"`
+  Reverse bool `json:"reverse"`
   Initial string `json:"initial"`
   Training stockrotation.Result `json:"training"`
   Holdout stockrotation.Result `json:"holdout"`
@@ -33,10 +34,12 @@ func run()error{
  rows:=[]row{}
  for _,mode:=range []string{"daily","hourly"}{
   for _,initial:=range []string{"MSTR","MSTZ"}{
-   train,err:=stockrotation.Run(a,b,start,cut,1,10,initial,mode);if err!=nil{return err}
-   test,err:=stockrotation.Run(a,b,cut,end,1,10,initial,mode);if err!=nil{return err}
-   rows=append(rows,row{mode,initial,train,test})
+   for _,reverse:=range []bool{false,true}{
+   train,err:=stockrotation.RunWithDirection(a,b,start,cut,1,10,initial,mode,reverse);if err!=nil{return err}
+   test,err:=stockrotation.RunWithDirection(a,b,cut,end,1,10,initial,mode,reverse);if err!=nil{return err}
+   rows=append(rows,row{mode,reverse,initial,train,test})
   }
+ }
  }
  return json.NewEncoder(os.Stdout).Encode(struct{Results []row `json:"results"`; MSTRBars int `json:"mstr_bars"`; MSTZBars int `json:"mstz_bars"`}{rows,len(a),len(b)})
 }
