@@ -1,0 +1,39 @@
+name: Multi ETF reverse rotation
+on:
+  pull_request:
+    paths:
+      - 'cmd/multipairtest/**'
+      - 'internal/stockrotation/**'
+      - '.github/workflows/multipair.yml'
+  workflow_dispatch:
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./cmd/multipairtest/... ./internal/stockrotation/...
+      - run: mkdir -p results && go run ./cmd/multipairtest > results/pairs.json
+      - name: Summarize reversed daily signals
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/pairs.json'))
+          lines=['# Reverse 1% stock ETF pair rotation','Switch to opposite fund when held fund rises >=1% over prior completed trading day. 10bps per side.','']
+          for x in d['results']:
+            if x['mode']=='daily' and x['reverse']:
+              a,b=x['training'],x['holdout']
+              lines.append(f"{x['pair']} start {x['initial']}: training {a['return_pct']:+.2f}%, holdout {b['return_pct']:+.2f}%, DD {b['max_drawdown_pct']:.2f}%, switches {b['switches']}")
+          s='\n'.join(lines)
+          print(s)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-pair-rotation
+          path: results/
