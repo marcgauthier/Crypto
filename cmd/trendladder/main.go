@@ -13,7 +13,12 @@ import (
 )
 
 type position struct{symbol string;shares,entry,cost,target float64;opened time.Time}
+type assetStats struct{ Symbol string `json:"symbol"`; Buys int `json:"buys"`; Sold int `json:"sold"`; Bags int `json:"bags"`; RealizedPnL float64 `json:"realized_pnl"`; UnrealizedPnL float64 `json:"unrealized_pnl"`; BagCost float64 `json:"bag_cost"`; BagMarketValue float64 `json:"bag_market_value"` }
 type result struct{
+ Assets []assetStats `json:"assets"`
+ Cash float64 `json:"cash"`
+ PortfolioEquity float64 `json:"portfolio_equity"`
+ SkippedNoCash int `json:"skipped_no_cash"`
  IntervalHours int `json:"interval_hours"`
  ReturnPct float64 `json:"return_pct"`
  MaxDrawdownPct float64 `json:"max_drawdown_pct"`
@@ -56,6 +61,7 @@ func run()error{
  for _,interval:=range []int{4,8}{
   cash:=10000.0;initial:=cash;peak:=initial;maxDD:=0.0;open:=[]position{};out:=result{IntervalHours:interval}
   nextEntry:=time.Time{}
+  stats:=map[string]*assetStats{"MSTR":{Symbol:"MSTR"},"MSTZ":{Symbol:"MSTZ"}}
   for i:=first;i<len(bars);i++{
    p:=bars[i];now:=p.a.Time
    // Existing positions can exit at this candle's open if gapped above the target,
@@ -65,7 +71,7 @@ func run()error{
     c:=p.a;if pos.symbol=="MSTZ"{c=p.b}
     if now.After(pos.opened)&&c.High>=pos.target{
      sell:=pos.target;if c.Open>sell{sell=c.Open}
-     proceeds:=pos.shares*sell*(1-fee);cash+=proceeds;out.Closed++
+     proceeds:=pos.shares*sell*(1-fee);cash+=proceeds;out.Closed++;stats[pos.symbol].Sold++;stats[pos.symbol].RealizedPnL+=proceeds-pos.cost
      if proceeds>pos.cost{out.Wins++}
     }else{remain=append(remain,pos)}
    }
@@ -80,11 +86,13 @@ func run()error{
      symbol:="";c:=p.a
      if delta>0{symbol="MSTR"}else if delta<0{symbol="MSTZ";c=p.b}
      allocation:=initial*0.01
+     if symbol!=""&&cash<allocation{out.SkippedNoCash++}
      if symbol!=""&&cash>=allocation{
       shares:=allocation/(c.Open*(1+fee))
       cash-=allocation
       open=append(open,position{symbol,shares,c.Open,allocation,c.Open*1.02,now})
       out.Entries++
+      stats[symbol].Buys++
       if symbol=="MSTR"{out.LongEntries++}else{out.InverseEntries++}
       if len(open)>out.MaxOpen{out.MaxOpen=len(open)}
      }
@@ -95,7 +103,15 @@ func run()error{
    for _,pos:=range open{price:=p.a.Close;if pos.symbol=="MSTZ"{price=p.b.Close};equity+=pos.shares*price*(1-fee)}
    if equity>peak{peak=equity}
    maxDD=math.Max(maxDD,(peak-equity)/peak*100)
-   if i==len(bars)-1{out.ReturnPct=(equity/initial-1)*100;out.MaxDrawdownPct=maxDD;out.Open=len(open);out.CashPct=cash/initial*100}
+   if i==len(bars)-1{
+    for _,pos:=range open{
+     price:=p.a.Close;if pos.symbol=="MSTZ"{price=p.b.Close}
+     a:=stats[pos.symbol];a.Bags++;a.BagCost+=pos.cost;value:=pos.shares*price*(1-fee);a.BagMarketValue+=value;a.UnrealizedPnL+=value-pos.cost
+    }
+    out.Assets=[]assetStats{*stats["MSTR"],*stats["MSTZ"]}
+    out.Cash=cash;out.PortfolioEquity=equity
+    out.ReturnPct=(equity/initial-1)*100;out.MaxDrawdownPct=maxDD;out.Open=len(open);out.CashPct=cash/initial*100
+   }
   }
   results=append(results,out)
  }
