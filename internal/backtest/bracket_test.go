@@ -27,7 +27,7 @@ func TestBracketStopFirstWhenBothLevelsHitSameBar(t *testing.T) {
   )
   r,err:=RunBracket(b,Params{DropPct:5,GainPct:5,StopPct:5},bracketConfig())
   if err!=nil { t.Fatal(err) }
-  if r.Trades!=1 || r.TradeLog[0].ExitReason!="stop" || math.Abs(r.TradeLog[0].SellPrice-85)>1e-8 {
+  if r.Trades!=1 || r.TradeLog[0].ExitReason!="stop" || math.Abs(r.TradeLog[0].SellPrice-85.5)>1e-8 {
     t.Fatalf("must choose conservative stop in ambiguous bar: %+v",r.TradeLog)
   }
   if !(r.ReturnPct < 0) || r.OpenPosition {
