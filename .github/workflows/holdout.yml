@@ -14,7 +14,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.10'
-      - run: go mod download
+      - run: go mod tidy
       - name: Optimize May 8-Aug 7, test Aug 8-Nov 7 (SOXL and SOXS)
         run: |
           mkdir -p results
