@@ -16,6 +16,9 @@ type Result struct{
 }
 type pair struct{a,b market.Candle}
 func Run(mstr,mstz []market.Candle,start,end time.Time,threshold,costBps float64,initial,mode string)(Result,error){
+ return RunWithDirection(mstr,mstz,start,end,threshold,costBps,initial,mode,false)
+}
+func RunWithDirection(mstr,mstz []market.Candle,start,end time.Time,threshold,costBps float64,initial,mode string,reverse bool)(Result,error){
  out:=Result{}
  if threshold<=0||costBps<0||costBps>=10000||!start.Before(end)||(initial!="MSTR"&&initial!="MSTZ")||(mode!="daily"&&mode!="hourly"){return out,errors.New("invalid configuration")}
  bm:=map[int64]market.Candle{}
@@ -49,7 +52,10 @@ func Run(mstr,mstz []market.Candle,start,end time.Time,threshold,costBps float64
     oldPx,newPx:=older.a.Close,newer.a.Close
     if held=="MSTZ"{oldPx,newPx=older.b.Close,newer.b.Close}
     // Exit a held position after a 1% decline in its own completed-bar close.
-    if oldPx>0&&(newPx/oldPx-1)*100<=-threshold{switchNow=true}
+    if oldPx>0{
+     change:=(newPx/oldPx-1)*100
+     if (!reverse&&change<=-threshold)||(reverse&&change>=threshold){switchNow=true}
+    }
    }
   }
   if held==""||switchNow{
