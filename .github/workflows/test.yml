@@ -29,9 +29,19 @@ jobs:
         with:
           go-version: '1.26.10'
       - run: go mod tidy
-      - name: Backtest six months of SOXL / SOXS
-        run: go run ./cmd/cryptoscan --pair SOXL:SOXS --months 6
+      - name: Backtest last 180 days of SOXL / SOXS
+        run: go run ./cmd/cryptoscan --pair SOXL:SOXS --days 180
       - name: Repeat request (should use cached historical candles)
-        run: go run ./cmd/cryptoscan --pair SOXL:SOXS --months 6
+        run: go run ./cmd/cryptoscan --pair SOXL:SOXS --days 180
       - name: Backtest six months of MSTR / MSTZ
-        run: go run ./cmd/cryptoscan --pair MSTR:MSTZ --months 6
+        run: go run ./cmd/cryptoscan --pair MSTR:MSTZ --days 180
+      - name: Check persisted SQLite dashboard endpoints
+        shell: bash
+        run: |
+          go run ./cmd/cryptoweb --db ./data/findings.sqlite > /tmp/cryptoweb.log 2>&1 &
+          for i in $(seq 1 25); do
+            if curl --fail --silent http://127.0.0.1:8080/api/groups > /tmp/groups.json; then break; fi
+            sleep 2
+          done
+          python3 -c 'import json; g=json.load(open("/tmp/groups.json")); assert {x["symbol"] for x in g} >= {"SOXL","SOXS","MSTR","MSTZ"}; print("Dashboard SQLite groups verified:", len(g))'
+          curl --fail --silent http://127.0.0.1:8080/ | grep -q "Strategy consistency"
