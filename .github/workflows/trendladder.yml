@@ -1,0 +1,34 @@
+name: MSTR MSTZ Trend Ladder
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths:
+      - 'cmd/trendladder/**'
+      - '.github/workflows/trendladder.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go test ./cmd/trendladder/... ./internal/market/...
+      - name: Run 1h 4h 8h trend ladder
+        run: |
+          mkdir -p results
+          go run ./cmd/trendladder -trend-hours 4 > results/trendladder.json
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/trendladder.json'))
+          lines=['# MSTR/MSTZ 2% profit target, 1% bankroll per trade',f"Period: {d['Start']} through {d['End']}; aligned hours: {d['AlignedHours']}",f"MSTR buy-and-hold: {d['BuyHoldMSTRPct']:+.2f}%",'| Entry interval | P&L | Max drawdown | Entries | Closed | Wins | Open | Cash % |','|---|---:|---:|---:|---:|---:|---:|---:|']
+          for r in d['Results']:
+            lines.append(f"| {r['interval_hours']}h | {r['return_pct']:+.2f}% | {r['max_drawdown_pct']:.2f}% | {r['entries']} | {r['closed']} | {r['wins']} | {r['open']} | {r['cash_pct']:.1f}% |")
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trend-ladder-results
+          path: results/trendladder.json
