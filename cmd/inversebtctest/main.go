@@ -27,6 +27,10 @@ func run()error{
  btc,err:=fetch("BTC-USD",start.AddDate(0,0,-8));if err!=nil{return err}
  train,err:=simplebtc.Run(b,a,btc,start,cut,1,10);if err!=nil{return err}
  hold,err:=simplebtc.Run(b,a,btc,cut,end,1,10);if err!=nil{return err}
+ train.MSTRSessions,train.MSTZSessions=train.MSTZSessions,train.MSTRSessions
+ hold.MSTRSessions,hold.MSTZSessions=hold.MSTZSessions,hold.MSTRSessions
+ if train.Active=="MSTR"{train.Active="MSTZ"}else if train.Active=="MSTZ"{train.Active="MSTR"}
+ if hold.Active=="MSTR"{hold.Active="MSTZ"}else if hold.Active=="MSTZ"{hold.Active="MSTR"}
  return json.NewEncoder(os.Stdout).Encode(struct{
   Training simplebtc.Result `json:"training"`
   Holdout simplebtc.Result `json:"holdout"`
