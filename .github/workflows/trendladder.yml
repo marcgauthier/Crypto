@@ -25,6 +25,13 @@ jobs:
           lines=['# MSTR/MSTZ 2% profit target, 1% bankroll per trade',f"Period: {d['Start']} through {d['End']}; aligned hours: {d['AlignedHours']}",f"MSTR buy-and-hold: {d['BuyHoldMSTRPct']:+.2f}%",'| Entry interval | P&L | Max drawdown | Entries | Closed | Wins | Open | Cash % |','|---|---:|---:|---:|---:|---:|---:|---:|']
           for r in d['Results']:
             lines.append(f"| {r['interval_hours']}h | {r['return_pct']:+.2f}% | {r['max_drawdown_pct']:.2f}% | {r['entries']} | {r['closed']} | {r['wins']} | {r['open']} | {r['cash_pct']:.1f}% |")
+          for r in d['Results']:
+            lines.append(f"\\n## {r['interval_hours']}h breakdown")
+            lines.append('| Symbol | Buys | Sold | Bags | Realized P&L | Unrealized P&L | Bag cost | Bag market value |')
+            lines.append('|---|---:|---:|---:|---:|---:|---:|---:|')
+            for a in r['assets']:
+              lines.append(f"| {a['symbol']} | {a['buys']} | {a['sold']} | {a['bags']} | ${a['realized_pnl']:+.2f} | ${a['unrealized_pnl']:+.2f} | ${a['bag_cost']:.2f} | ${a['bag_market_value']:.2f} |")
+            lines.append(f"Cash: ${r['cash']:.2f}; Portfolio: ${r['portfolio_equity']:.2f}; Skipped (no cash): {r['skipped_no_cash']}")
           print('\n'.join(lines))
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
           PY
