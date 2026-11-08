@@ -31,6 +31,7 @@ type LegReport struct {
 }
 type Report struct {
 	Pair                       string      `json:"pair"`
+	ExitMode                   string      `json:"exit_mode"`
 	From                       time.Time   `json:"from"`
 	Through                    time.Time   `json:"through"`
 	TrainUntil                 time.Time   `json:"train_until"`
@@ -50,6 +51,7 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	dataDir := fs.String("data-dir", "./data", "persistent MetricsDB storage directory")
 	findingsPath := fs.String("findings-db", "", "SQLite history file (default: <data-dir>/findings.sqlite)")
 	noSave := fs.Bool("no-save", false, "skip recording this backtest in SQLite")
+	exitMode := fs.String("exit-mode", "close", "exit strategy: close (original next-open profit signal) or bracket (intrabar TP/SL)")
 	lookback := fs.Int("lookback", 24, "number of past hourly closes for rolling peak")
 	split := fs.Float64("train-fraction", 0.70, "initial chronological training fraction")
 	trainUntil := fs.String("train-until", "", "optional strict UTC training cutoff YYYY-MM-DD; overrides --train-fraction")
@@ -61,6 +63,9 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	gainMin := fs.Float64("gain-min", 1, "minimum gain threshold (percent)")
 	gainMax := fs.Float64("gain-max", 16, "maximum gain threshold (percent)")
 	gainStep := fs.Float64("gain-step", 1, "gain threshold step (percentage points)")
+	stopMin := fs.Float64("stop-min", 2, "minimum bracket stop-loss percent")
+	stopMax := fs.Float64("stop-max", 12, "maximum bracket stop-loss percent")
+	stopStep := fs.Float64("stop-step", 2, "stop-loss optimization step in percentage points")
 	endDate := fs.String("end", "", "optional inclusive UTC end date, YYYY-MM-DD (for repeatable tests)")
 	jsonOutput := fs.Bool("json", false, "machine-readable summary (includes last five trades)")
 	if err := fs.Parse(args); err != nil {
@@ -76,6 +81,12 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 				return fmt.Errorf("invalid ticker: %q", sym)
 			}
 		}
+	}
+	if *exitMode != "close" && *exitMode != "bracket" {
+		return errors.New("--exit-mode must be close or bracket")
+	}
+	if *exitMode == "bracket" && !*noSave {
+		return errors.New("bracket mode is an isolated research experiment: supply --no-save so stop levels are not silently lost in the existing SQLite findings schema")
 	}
 	if *months < 1 || *months > 36 || *days < 0 || *days > 3650 || *lookback < 2 || *split <= 0.1 || *split >= 0.9 || *cost < 0 || *cost >= 10000 {
 		return errors.New("invalid months, lookback, training fraction or cost")
@@ -135,7 +146,7 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 			return fmt.Errorf("--train-until %s must fall strictly within the observed candle range %s..%s", *trainUntil, commonStart.Format(time.RFC3339), commonEnd.Format(time.RFC3339))
 		}
 	}
-	report := Report{Pair: strings.Join(parts, ":"), From: start, Through: end, TrainUntil: cutoff, Lookback: *lookback, CostsBpsPerSide: *cost}
+	report := Report{Pair: strings.Join(parts, ":"), ExitMode: *exitMode, From: start, Through: end, TrainUntil: cutoff, Lookback: *lookback, CostsBpsPerSide: *cost}
 	results := make([]backtest.Result, 2)
 	for i, sym := range parts {
 		bars := candles[i]
@@ -155,11 +166,21 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 		if index < *lookback+5 || len(bars)-index < *lookback+5 {
 			return fmt.Errorf("%s: too few bars in training or testing split", sym)
 		}
-		train, err := backtest.Optimize(bars[:index], backtest.Config{Lookback: *lookback, CostBps: *cost}, grid)
+		var train backtest.Result
+		if *exitMode == "bracket" {
+			train, err = backtest.OptimizeBracket(bars[:index], backtest.Config{Lookback: *lookback, CostBps: *cost}, backtest.BracketGrid{Grid: grid, StopMin: *stopMin, StopMax: *stopMax, StopStep: *stopStep})
+		} else {
+			train, err = backtest.Optimize(bars[:index], backtest.Config{Lookback: *lookback, CostBps: *cost}, grid)
+		}
 		if err != nil {
 			return fmt.Errorf("%s optimization: %w", sym, err)
 		}
-		test, err := backtest.Run(bars, train.Params, backtest.Config{Lookback: *lookback, CostBps: *cost, StartIndex: index})
+		var test backtest.Result
+		if *exitMode == "bracket" {
+			test, err = backtest.RunBracket(bars, train.Params, backtest.Config{Lookback: *lookback, CostBps: *cost, StartIndex: index})
+		} else {
+			test, err = backtest.Run(bars, train.Params, backtest.Config{Lookback: *lookback, CostBps: *cost, StartIndex: index})
+		}
 		if err != nil {
 			return err
 		}
@@ -228,12 +249,16 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	if *jsonOutput {
 		return json.NewEncoder(w).Encode(report)
 	}
-	fmt.Fprintf(w, "PAIR %s | %s to %s UTC | train/test %.0f/%.0f | cost %.0f bps/side\n", report.Pair, start.Format("2006-01-02"), end.Format("2006-01-02"), *split*100, (1-*split)*100, *cost)
+	fmt.Fprintf(w, "PAIR %s | %s to %s UTC | exit %s | cost %.0f bps/side\n", report.Pair, start.Format("2006-01-02"), end.Format("2006-01-02"), *exitMode, *cost)
 	fmt.Fprintf(w, "Rule: last %d completed hourly closes; signal at bar close, order at NEXT bar open.\n", *lookback)
 	for _, leg := range report.Legs {
 		fmt.Fprintf(w, "\n%s (%s) | %d hourly candles | cache: %d fetched / %d already stored / %d HTTP requests\n", leg.Symbol, leg.Side, leg.Candles, leg.Cache.DownloadedBars, leg.Cache.CachedBars, leg.Cache.DownloadRequests)
 		fmt.Fprintf(w, "  BUY %s after a %.1f%% drop from its rolling %d-bar closing high.\n", leg.Symbol, leg.Best.DropPct, *lookback)
-		fmt.Fprintf(w, "  SELL %s after a %.1f%% gain from its actual purchase price (after estimated entry cost).\n", leg.Symbol, leg.Best.GainPct)
+		if *exitMode == "bracket" {
+			fmt.Fprintf(w, "  EXIT using a %.1f%% take-profit or %.1f%% stop-loss from the actual entry open; stop-first on ambiguous OHLC bars.\n", leg.Best.GainPct, leg.Best.StopPct)
+		} else {
+			fmt.Fprintf(w, "  SELL %s after a %.1f%% gain from its actual purchase price (after estimated entry cost).\n", leg.Symbol, leg.Best.GainPct)
+		}
 		fmt.Fprintf(w, "  Training: %+.2f%% return | %d closed trades | %.1f%% winners | %.1f%% max drawdown\n", leg.Train.ReturnPct, leg.Train.Trades, leg.Train.WinRatePct, leg.Train.MaxDrawdownPct)
 		fmt.Fprintf(w, "  OUT-OF-SAMPLE: %+.2f%% return | %d closed trades | %.1f%% winners | %.1f%% max drawdown | buy-and-hold %+.2f%%\n", leg.Test.ReturnPct, leg.Test.Trades, leg.Test.WinRatePct, leg.Test.MaxDrawdownPct, leg.Test.BuyHoldPct)
 		if leg.Test.OpenPosition {
