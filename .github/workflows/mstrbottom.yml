@@ -1,4 +1,4 @@
-name: MSTR 30d Bottom Reversal
+name: MSTR 7d Bottom Reversal
 on:
   workflow_dispatch:
   push:
@@ -20,7 +20,7 @@ jobs:
           import json,os
           d=json.load(open('results/mstrbottom.json'))
           rows=d['Results']
-          lines=['# MSTR 30-trading-day low + bullish close',f"Period {d['Start']} to {d['End']}; signals {len(rows)}",'| Signal | Entry | Entry $ | Low $ | 5d no lower low | 10d no lower low | +2% within 5d | +5% within 10d | +10% within 20d |','|---|---|---:|---:|---|---|---|---|---|']
+          lines=['# MSTR 7-trading-day low (within 1%) + stable/up close (at least -0.5%)',f"Period {d['Start']} to {d['End']}; signals {len(rows)}",'| Signal | Entry | Entry $ | Low $ | 5d no lower low | 10d no lower low | +2% within 5d | +5% within 10d | +10% within 20d |','|---|---|---:|---:|---|---|---|---|---|']
           for r in rows:
             lines.append(f"| {r['date']} | {r['entry_date']} | {r['entry']:.2f} | {r['signal_low']:.2f} | {r['no_lower_low_5']} | {r['no_lower_low_10']} | {r['hit_2pct_5']} | {r['hit_5pct_10']} | {r['hit_10pct_20']} |")
           for days,field in [(5,'no_lower_low_5'),(10,'no_lower_low_10'),(5,'hit_2pct_5'),(10,'hit_5pct_10'),(20,'hit_10pct_20'),(10,'first_2_before_lower_10'),(20,'first_5_before_lower_20')]:
