@@ -2,9 +2,9 @@
 
 **Question:** Can the previous seven completed UTC days of BTC action and the last completed UTC day decide when to buy MSTR (bullish) or MSTZ (inverse), with take-profit / stop-loss controlling exits?
 
-**Answer in the first independent holdout: No demonstrated edge.** The training-optimized thresholds had a **-52.61%** out-of-sample return, despite +44.36% during optimization. A simpler fixed BTC momentum threshold also lost money (-13.79%).
+**Answer in the first independent holdout: No demonstrated edge.** The training-optimized thresholds had a **-52.61%** out-of-sample return, despite +44.36% during optimization. A simpler fixed BTC momentum threshold also lost money (between -13.79% and -13.81% on two independent downloads).
 
-Training: May 8, 2026 00:00 UTC through August 8 00:00 UTC (exclusive). Holdout: August 8 through November 8 00:00 UTC (exclusive); last US market session Nov 6. Parameters selected using training period only. Data: Yahoo Finance BTC-USD 1h (4607 candles including BTC lookback warmup), MSTR (890 1h candles), MSTZ (890 1h candles). Fees/slippage 10 bps/side; open paper position valued using final price including expected exit fee.
+Training: May 8, 2026 00:00 UTC through August 8 00:00 UTC (exclusive). Holdout: August 8 through November 8 00:00 UTC (exclusive); last US market session Nov 6. Parameters selected using training period only. Data: Yahoo Finance BTC-USD 1h (4607 candles including BTC lookback warmup), MSTR/MSTZ between 873 and 890 1h candles across two successful CI runs, reflecting Yahoo historical response variability. Fees/slippage 10 bps/side; open paper position valued using final price including expected exit fee.
 
 ## Signal and execution
 
@@ -18,7 +18,9 @@ Training: May 8, 2026 00:00 UTC through August 8 00:00 UTC (exclusive). Holdout:
 | Strategy | BTC 7-day threshold | BTC previous-day threshold | Take profit | Stop loss | Training return | Holdout return | Holdout trades MSTR / MSTZ | Holdout max drawdown | Final open position |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---|
 | Train-optimized | 0.5% | 0.0% | 12% | 8% | +44.36% | **-52.61%** | 8 / 7 | 58.69% | MSTZ |
-| Preset rule, not optimized | 2.0% | 1.0% | 5% | 4% | — | **-13.79%** | 7 / 9 | 18.05% | Cash |
+| Preset rule, not optimized | 2.0% | 1.0% | 5% | 4% | — | **-13.79% to -13.81%** | 7 / 9 | 18.05% to 18.08% | Cash |
+
+**Data quality:** Repeated successful CI runs used the same requested date range, but Yahoo returned different counts of stock hourly candles (890/890 versus 874/873). The optimized result stayed -52.61%, and the preset changed by 0.02 percentage point. Figures should be considered approximate until stock time-series completeness is independently verified. Do not rely on incomplete coverage for production signals.
 
 **Interpretation:** Even with both 7-day and prior-day BTC trends confirming the direction, buying MSTR or inverse MSTZ the following US session did not generalize to the holdout period. MSTR is not BTC and MSTZ is not a direct Bitcoin short. Company-specific risk, changing BTC correlation, ETF leverage/reset behavior, and overnight gaps matter. These two backtests are insufficient to establish an edge; search across a large parameter grid on just three months is especially prone to overfitting. The comparison also holds one shared account and thus is **not** directly comparable to earlier independent 50/50 MSTR/MSTZ portfolios.
 
