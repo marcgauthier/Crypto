@@ -33,6 +33,16 @@ func RunBracket(bars []market.Candle, p Params, c Config) (Result, error) {
     var entryAt time.Time
     peakEquity := 1.0
     armed, pendingBuy := true, false
+    // At the holdout boundary, inherit the previous close's trigger state
+    // as market warm-up only, not a simulated pre-test position.
+    if c.StartIndex >= c.Lookback {
+        prev := c.StartIndex - 1
+        peak := bars[prev-c.Lookback+1].Close
+        for j:=prev-c.Lookback+2;j<=prev;j++ {
+            if bars[j].Close>peak {peak=bars[j].Close}
+        }
+        armed=bars[prev].Close>peak*(1-p.DropPct/100)
+    }
     sumTrade, totalHold := 0.0, 0.0
 
     for i := c.StartIndex; i < len(bars); i++ {
