@@ -22,7 +22,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json,os
-          d=json.load(open('results/simple_btc.json'))
+          d=json.load(open('results/inverse_btc.json'))
           lines=['# Contrarian BTC previous-day ±1% rotation, always invested','BTC completed UTC daily close; switch at next shared US market opening hourly candle; 10 bps each side.','']
           for key in ('training','holdout'):
             r=d[key]
