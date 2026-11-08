@@ -54,6 +54,7 @@ func run()error{
   Holdout stockrotation.Result `json:"holdout"`
   SixMonths stockrotation.Result `json:"six_months"`
   BuyHold buyHoldResult `json:"buy_hold"`
+  Trailing stockrotation.Result `json:"trailing"`
  }
  rows:=[]row{}
  for _,pairName:=range strings.Split(*pairsArg,","){
@@ -67,7 +68,8 @@ func run()error{
    test,err:=stockrotation.RunWithDirection(a,b,cut,end,1,10,initial,mode,reverse);if err!=nil{return err}
    six,err:=stockrotation.RunWithDirection(a,b,start,end,1,10,initial,mode,reverse);if err!=nil{return err}
    hold,err:=buyHold(a,b,start,end,initial);if err!=nil{return err}
-   rows=append(rows,row{pairName,mode,reverse,initial,train,test,six,hold})
+   trailing,err:=stockrotation.RunTrailing(a,b,start,end,1,1,3,10,initial,mode);if err!=nil{return err}
+   rows=append(rows,row{pairName,mode,reverse,initial,train,test,six,hold,trailing})
   }
  }
  }
