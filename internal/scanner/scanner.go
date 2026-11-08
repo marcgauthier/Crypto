@@ -52,6 +52,7 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	noSave := fs.Bool("no-save", false, "skip recording this backtest in SQLite")
 	lookback := fs.Int("lookback", 24, "number of past hourly closes for rolling peak")
 	split := fs.Float64("train-fraction", 0.70, "initial chronological training fraction")
+	trainUntil := fs.String("train-until", "", "optional strict UTC training cutoff YYYY-MM-DD; overrides --train-fraction")
 	minTrades := fs.Int("min-trades", 2, "minimum closed trades on training period")
 	cost := fs.Float64("cost-bps", 10, "estimated transaction fee+slippage per side, basis points")
 	dropMin := fs.Float64("drop-min", 1, "minimum drop threshold (percent)")
@@ -125,6 +126,15 @@ func Run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 		return errors.New("symbols have no overlapping time range")
 	}
 	cutoff := commonStart.Add(time.Duration(float64(commonEnd.Sub(commonStart)) * (*split)))
+	if *trainUntil != "" {
+		cutoff, err = time.Parse("2006-01-02", *trainUntil)
+		if err != nil {
+			return fmt.Errorf("--train-until: %w", err)
+		}
+		if !cutoff.After(commonStart) || !cutoff.Before(commonEnd) {
+			return fmt.Errorf("--train-until %s must fall strictly within the observed candle range %s..%s", *trainUntil, commonStart.Format(time.RFC3339), commonEnd.Format(time.RFC3339))
+		}
+	}
 	report := Report{Pair: strings.Join(parts, ":"), From: start, Through: end, TrainUntil: cutoff, Lookback: *lookback, CostsBpsPerSide: *cost}
 	results := make([]backtest.Result, 2)
 	for i, sym := range parts {
