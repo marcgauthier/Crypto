@@ -1,0 +1,35 @@
+name: MSTR 30d Bottom Reversal
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths: ['cmd/mstrbottom/**','.github/workflows/mstrbottom.yml']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go test ./cmd/mstrbottom/...
+      - run: |
+          mkdir -p results
+          go run ./cmd/mstrbottom > results/mstrbottom.json
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/mstrbottom.json'))
+          rows=d['Results']
+          lines=['# MSTR 30-trading-day low + bullish close',f"Period {d['Start']} to {d['End']}; signals {len(rows)}",'| Signal | Entry | Entry $ | Low $ | 5d no lower low | 10d no lower low | +2% within 5d | +5% within 10d | +10% within 20d |','|---|---|---:|---:|---|---|---|---|---|']
+          for r in rows:
+            lines.append(f"| {r['date']} | {r['entry_date']} | {r['entry']:.2f} | {r['signal_low']:.2f} | {r['no_lower_low_5']} | {r['no_lower_low_10']} | {r['hit_2pct_5']} | {r['hit_5pct_10']} | {r['hit_10pct_20']} |")
+          for days,field in [(5,'no_lower_low_5'),(10,'no_lower_low_10'),(5,'hit_2pct_5'),(10,'hit_5pct_10'),(20,'hit_10pct_20'),(10,'first_2_before_lower_10'),(20,'first_5_before_lower_20')]:
+            valid=[r for r in rows if r['days_observed']>=days]
+            lines.append(f"{field}: {sum(r[field] for r in valid)}/{len(valid)} mature signals")
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mstrbottom-results
+          path: results/mstrbottom.json
