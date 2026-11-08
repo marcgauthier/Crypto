@@ -117,7 +117,12 @@ func Open(path string) (*Store, error) {
 			return nil, fmt.Errorf("initialize SQLite: %w", err)
 		}
 	}
-	return &Store{db: db}, nil
+	store := &Store{db: db}
+	if err := store.initLive(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	return store, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }

@@ -19,6 +19,8 @@ func New(db *findings.Store) http.Handler {
 	m.HandleFunc("GET /", h.index)
 	m.HandleFunc("GET /api/groups", h.groups)
 	m.HandleFunc("GET /api/history", h.history)
+	m.HandleFunc("GET /api/live", h.live)
+	m.HandleFunc("GET /api/signals", h.signals)
 	return m
 }
 
@@ -70,4 +72,32 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 		Rows      []findings.Finding `json:"rows"`
 		Stability findings.Stability `json:"stability"`
 	}{group, rows, findings.Summarize(rows)})
+}
+
+// The live endpoints read persisted SQLite data; they cannot place orders.
+func (h *Handler) live(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.LiveStates(r.Context())
+	if err != nil {
+		http.Error(w, "cannot load live status", http.StatusInternalServerError)
+		return
+	}
+	jsonResponse(w, rows)
+}
+
+func (h *Handler) signals(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 1000 {
+			http.Error(w, "invalid limit", http.StatusBadRequest)
+			return
+		}
+		limit = n
+	}
+	rows, err := h.db.RecentSignals(r.Context(), limit)
+	if err != nil {
+		http.Error(w, "cannot load signals", http.StatusInternalServerError)
+		return
+	}
+	jsonResponse(w, rows)
 }

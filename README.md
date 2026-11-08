@@ -137,4 +137,66 @@ true forward performance before interpreting this as a trading signal.
 
 The code uses the pure-Go `modernc.org/sqlite` SQLite driver and `database/sql`.
 The web server uses only Go standard-library HTTP primitives and embedded SVG.
-No broker integration, scheduled job or live order submission is included.
+No broker integration or live order submission is included; the daemon now schedules
+analysis and paper signals automatically.
+
+## Continuously running signal website (new)
+
+`cryptoweb` is now the **continuous signal service** as well as the dashboard.
+It does **not** send orders to a broker; BUY and SELL are indicative paper
+signals, logged to SQLite, based on completed 5-minute candles.
+
+```bash
+# Run from the repository root; defaults to both pairs and localhost:8080.
+go run ./cmd/cryptoweb --pairs SOXL:SOXS,MSTR:MSTZ --days 180 --lookback 24
+# Visit http://localhost:8080
+# To retain the old read-only dashboard without background market access:
+go run ./cmd/cryptoweb --history-only
+```
+
+**Schedules (UTC):**
+
+- The service evaluates each configured pair **once at 00:00 UTC** each day.
+  When started after midnight, it performs a catch-up evaluation if no
+  successful evaluation is saved for that UTC date. The successful daily
+  marker and two active rules are atomically committed to SQLite; restarting
+  the app does not re-optimize an already-completed date. Failed evaluations
+  retry no more often than every 30 minutes, and live signals are paused until
+  that day's rules are available.
+- On **every UTC 5-minute boundary**, the service checks each symbol during
+  US regular trading hours (09:35–16:10 America/New_York; holidays and stale
+  feeds are automatically skipped). It consumes only **completed 5m candles**
+  and rejects quotes more than 15 minutes old. The rolling reference peak is
+  calculated from the last `--lookback` completed **hourly closes** in
+  MetricsDB. Current-day hourly candles are refreshed once per hour and reused
+  between checks. Yahoo's unofficial data can be delayed or unavailable;
+  alerts are **not** real-time execution promises.
+- For a **flat** symbol, signal **BUY** when the latest 5m close is at least
+  the optimized drop % below the highest recent hourly close. For an **open
+  paper position**, signal **SELL** when the latest 5m close is at least the
+  optimized gain % above the stored cost-adjusted paper entry price. The
+  scanner's historical fills are modeled at the **next hourly open**, whereas
+  the live signals use the *completed 5m close* as an indicative reference;
+  live results may diverge from historical backtests.
+- SOXL and SOXS (or MSTR and MSTZ) remain **independent**: an SOXL SELL does
+  not force a SOXS BUY, and both paper positions may be OPEN simultaneously.
+  Buying an inverse ETF is not borrowing/shorting stock. Daily optimization
+  changes the rules without resetting any open paper position; the gain target
+  continues to reference that position's recorded entry.
+
+**Persistence:** `./data/findings.sqlite` stores `evaluation_days`,
+`live_rules`, `live_state`, and `live_signals` in addition to historical
+`findings`. One symbol/closed-candle timestamp can create at most one signal,
+including across crashes/restarts. MetricsDB continues to own hourly OHLCV
+cache data. Website endpoints `/api/live` and `/api/signals?limit=100` expose
+read-only, regularly refreshed positions and alerts; original `/api/groups`
+and `/api/history` stability charts remain available. Run the service from a
+persistent directory; GitHub Actions **is not** a daemon host.
+
+To keep it running after a Linux reboot, build a binary and install the
+example systemd service at `deploy/cryptoweb.service`. Create an unprivileged
+`crypto` user, a writable `/var/lib/crypto` directory owned by it, and install
+the binary at `/usr/local/bin/cryptoweb`. Then enable the service using
+`systemctl enable --now cryptoweb`. The HTTP listener is intentionally
+`127.0.0.1:8080`; use an authenticated TLS reverse proxy if remote access is
+needed. Only one service instance should use a MetricsDB directory.
