@@ -1,0 +1,4 @@
+/data/
+*.log
+*.test
+.DS_Store
