@@ -88,3 +88,53 @@ portfolio math; Yahoo JSON parsing with a fake HTTP server; cache misses/hits
 and avoidance of duplicate downloads; and **MetricsDB persistence after
 closing and reopening**. GitHub Actions runs this suite. No real-market API
 credentials or network requests are required by tests.
+
+## SQLite optimization history and local website
+
+The scan now **records its findings after every successful run** in
+`./data/findings.sqlite`. The historical OHLCV candles are **still stored
+separately in MetricsDB**, so no previously downloaded market data needs to be
+fetched again just to view the dashboard. SQLite is used only for scan results.
+
+```bash
+# Run a rolling, fixed-length 180-day scan for both independent instruments.
+go run ./cmd/cryptoscan --pair SOXL:SOXS --days 180
+# Add another pair using the same local data and SQLite history.
+go run ./cmd/cryptoscan --pair MSTR:MSTZ --days 180
+# Open read-only history website; by default, bound only to localhost.
+go run ./cmd/cryptoweb
+# visit http://localhost:8080
+```
+
+The homepage has a list view (one row per scan date per symbol), an interactive
+filter for pair/symbol/window/lookback/configuration, and two charts:
+
+- **Buy after a drop of X%** and **sell after a gain of Y%**, plotted by UTC
+  analysis date, with mean, range and **sample standard deviation in percentage
+  points**. A smaller standard deviation indicates more consistent *selected
+  parameters* over the recorded scan days.
+- Out-of-sample total return compared with buy-and-hold in the same period,
+  to help identify regimes where the thresholds stop being profitable.
+
+Each SQLite row also includes training return, test return, completed trades,
+win rate, open-position flag, test max drawdown and combined two-leg return.
+A fixed `--days N` window makes comparisons consistent as time advances;
+`--months 6` remains supported for calendar-month-based requests. Use
+`--findings-db /some/path/findings.sqlite` on the scanner and `--db` on
+`cryptoweb` to point both at the same custom database. Use `--no-save` to run a
+scan without adding findings. For security, the website has read-only endpoints
+and **defaults to `127.0.0.1:8080`** rather than exposing the service to the
+network. It uses native SVG charts, not external scripts.
+
+SQLite deduplicates the *same symbol, pair, UTC end date, day window, lookback,
+and optimization settings*: rerunning the same configuration on the same day
+updates that point rather than manufacturing stability. Different optimization
+settings are charted separately. A new day adds a new point. **Multiple scan
+days are needed to see any stability trend; the initial run has only one
+point.** Rolling historical windows strongly overlap, so consistent parameters
+can still be overfitted; separately monitor out-of-sample performance and
+true forward performance before interpreting this as a trading signal.
+
+The code uses the pure-Go `modernc.org/sqlite` SQLite driver and `database/sql`.
+The web server uses only Go standard-library HTTP primitives and embedded SVG.
+No broker integration, scheduled job or live order submission is included.

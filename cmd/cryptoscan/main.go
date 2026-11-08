@@ -11,11 +11,13 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/marcgauthier/Crypto/internal/backtest"
 	"github.com/marcgauthier/Crypto/internal/cache"
+	"github.com/marcgauthier/Crypto/internal/findings"
 	"github.com/marcgauthier/Crypto/internal/market"
 )
 
@@ -51,8 +53,11 @@ func run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	fs := flag.NewFlagSet("cryptoscan", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	pair := fs.String("pair", "SOXL:SOXS", "bullish:bearish symbols, e.g. SOXL:SOXS or MSTR:MSTZ")
-	months := fs.Int("months", 6, "calendar months of hourly data")
+	months := fs.Int("months", 6, "calendar months of hourly data (unless --days is set)")
+	days := fs.Int("days", 0, "rolling number of calendar days of hourly data; overrides --months")
 	dataDir := fs.String("data-dir", "./data", "persistent MetricsDB storage directory")
+	findingsPath := fs.String("findings-db", "", "SQLite history file (default: <data-dir>/findings.sqlite)")
+	noSave := fs.Bool("no-save", false, "skip recording this backtest in SQLite")
 	lookback := fs.Int("lookback", 24, "number of past hourly closes for rolling peak")
 	split := fs.Float64("train-fraction", 0.70, "initial chronological training fraction")
 	minTrades := fs.Int("min-trades", 2, "minimum closed trades on training period")
@@ -79,7 +84,7 @@ func run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 			}
 		}
 	}
-	if *months < 1 || *months > 36 || *lookback < 2 || *split <= 0.1 || *split >= 0.9 || *cost < 0 || *cost >= 10000 {
+	if *months < 1 || *months > 36 || *days < 0 || *days > 3650 || *lookback < 2 || *split <= 0.1 || *split >= 0.9 || *cost < 0 || *cost >= 10000 {
 		return errors.New("invalid months, lookback, training fraction or cost")
 	}
 	grid := backtest.Grid{DropMin: *dropMin, DropMax: *dropMax, DropStep: *dropStep, GainMin: *gainMin, GainMax: *gainMax, GainStep: *gainStep, MinTrades: *minTrades}
@@ -95,6 +100,9 @@ func run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 		}
 	}
 	start := end.AddDate(0, -*months, 0)
+	if *days > 0 {
+		start = end.Add(-time.Duration(*days) * 24 * time.Hour)
+	}
 	db, err := cache.OpenMetrics(*dataDir, 3650)
 	if err != nil {
 		return fmt.Errorf("open MetricsDB: %w", err)
@@ -175,6 +183,45 @@ func run(ctx context.Context, w io.Writer, args []string, now time.Time) error {
 	}
 	if math.IsNaN(report.CombinedTestReturnPct) {
 		return errors.New("invalid portfolio return")
+	}
+	if !*noSave {
+		path := *findingsPath
+		if path == "" {
+			path = filepath.Join(*dataDir, "findings.sqlite")
+		}
+		saved, err := findings.Open(path)
+		if err != nil {
+			return fmt.Errorf("open findings SQLite: %w", err)
+		}
+		windowDays := int(math.Round(end.Sub(start).Hours() / 24))
+		settings := fmt.Sprintf("v1;train=%.4f;cost=%.3f;min=%d;drop=%.3f..%.3f/%.3f;gain=%.3f..%.3f/%.3f",
+			*split, *cost, *minTrades, *dropMin, *dropMax, *dropStep, *gainMin, *gainMax, *gainStep)
+		legs := make([]findings.Finding, 0, len(report.Legs))
+		for _, leg := range report.Legs {
+			legs = append(legs, findings.Finding{
+				Pair: report.Pair, Symbol: leg.Symbol, Side: leg.Side, ScannedAt: now,
+				WindowDays: windowDays, WindowStart: start, WindowEnd: end,
+				LookbackBars: *lookback, SettingsKey: settings,
+				BuyDropPct: leg.Best.DropPct, SellGainPct: leg.Best.GainPct,
+				TrainReturnPct: leg.Train.ReturnPct, TestReturnPct: leg.Test.ReturnPct,
+				TestBuyHoldPct: leg.Test.BuyHoldPct, TestMaxDrawdownPct: leg.Test.MaxDrawdownPct,
+				TestTrades: leg.Test.Trades, TestWinRatePct: leg.Test.WinRatePct,
+				TestOpenPosition:     leg.Test.OpenPosition,
+				PortfolioReturnPct:   report.CombinedTestReturnPct,
+				PortfolioDrawdownPct: report.CombinedTestMaxDrawdownPct,
+			})
+		}
+		saveErr := saved.Save(ctx, legs)
+		closeErr := saved.Close()
+		if saveErr != nil {
+			return fmt.Errorf("save findings: %w", saveErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close findings SQLite: %w", closeErr)
+		}
+		if !*jsonOutput {
+			fmt.Fprintf(w, "Findings saved in SQLite: %s\n", path)
+		}
 	}
 	if *jsonOutput {
 		return json.NewEncoder(w).Encode(report)
