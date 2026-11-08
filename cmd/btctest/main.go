@@ -59,5 +59,7 @@ func run()error{
   if w.Days==7{fullCount++;if w.SwitchBeat{fullWins++}}
  }
  out:=struct{Start string `json:"start"`;End string `json:"end"`;Days int `json:"days"`;BuyHold result `json:"buy_hold"`;Switch result `json:"switch_1pct"`;Assumptions string `json:"assumptions"`;Weeks []week `json:"weeks"`;WeeklyWins int `json:"weekly_wins"`;CumulativeWins int `json:"cumulative_wins"`;FullWeekWins int `json:"full_week_wins"`;FullWeeks int `json:"full_weeks"`}{days[0].day,days[len(days)-1].day,len(days),result{ReturnPct:(hold*(1-rate)-1)*100,MaxDD:holdDD},result{ReturnPct:(equity*(1-rate)-1)*100,MaxDD:dd,Switches:switches,LongTrades:longTrades,ShortTrades:shortTrades},"UTC daily candles aggregated from Yahoo BTC-USD hourly; 1x linear inverse short, no funding, 10bps per side; next UTC day open execution",weeks,weeklyWins,cumulativeWins,fullWins,fullCount}
+ fmt.Fprintf(os.Stderr,"WEEKLY_RESULT %d/%d weeks; full weeks %d/%d; cumulative %d/%d\\n",weeklyWins,len(weeks),fullWins,fullCount,cumulativeWins,len(weeks))
+ for _,w:=range weeks{fmt.Fprintf(os.Stderr,"WEEK %s %s HOLD %+.2f SWITCH %+.2f BEAT %t\\n",w.Start,w.End,w.HoldPct,w.SwitchPct,w.SwitchBeat)}
  return json.NewEncoder(os.Stdout).Encode(out)
 }
