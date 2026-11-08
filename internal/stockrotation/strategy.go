@@ -10,6 +10,10 @@ type Result struct{
  ReturnPct float64 `json:"return_pct"`
  MaxDrawdownPct float64 `json:"max_drawdown_pct"`
  Switches int `json:"switches"`
+ LongTrades int `json:"long_trades"`
+ LongWins int `json:"long_wins"`
+ ShortTrades int `json:"short_trades"`
+ ShortWins int `json:"short_wins"`
  MSTRSessions int `json:"mstr_sessions"`
  MSTZSessions int `json:"mstz_sessions"`
  Active string `json:"active"`
@@ -29,6 +33,7 @@ func RunWithDirection(mstr,mstz []market.Candle,start,end time.Time,threshold,co
  if len(pairs)<10{return out,errors.New("insufficient aligned candles")}
  ny,err:=time.LoadLocation("America/New_York");if err!=nil{return out,err}
  rate:=costBps/10000;cash,shares:=1.0,0.0;held:="";peak:=1.0
+ entryCost:=0.0
  lastSession:="";var prevSessionClose,prevPrevSessionClose pair
  var lastPair pair;havePrev:=false;havePrevPrev:=false
  for i,p:=range pairs{
@@ -59,11 +64,12 @@ func RunWithDirection(mstr,mstz []market.Candle,start,end time.Time,threshold,co
    }
   }
   if held==""||switchNow{
-   if held=="MSTR"{cash=shares*p.a.Open*(1-rate)}
-   if held=="MSTZ"{cash=shares*p.b.Open*(1-rate)}
+   if held=="MSTR"{cash=shares*p.a.Open*(1-rate);out.LongTrades++;if cash>entryCost{out.LongWins++}}
+   if held=="MSTZ"{cash=shares*p.b.Open*(1-rate);out.ShortTrades++;if cash>entryCost{out.ShortWins++}}
    if held!=""{out.Switches++}
    if held==""{held=initial}else if held=="MSTR"{held="MSTZ"}else{held="MSTR"}
    px:=p.a.Open;if held=="MSTZ"{px=p.b.Open}
+   entryCost=cash
    shares=cash/(px*(1+rate));cash=0
   }
   if newSession{
