@@ -1,0 +1,21 @@
+[Unit]
+Description=Crypto continuous strategy monitor (paper signals only)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=crypto
+Group=crypto
+WorkingDirectory=/var/lib/crypto
+ExecStart=/usr/local/bin/cryptoweb --listen 127.0.0.1:8080 --data-dir /var/lib/crypto --db /var/lib/crypto/findings.sqlite --pairs SOXL:SOXS,MSTR:MSTZ --days 180
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/crypto
+
+[Install]
+WantedBy=multi-user.target

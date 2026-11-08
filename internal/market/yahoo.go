@@ -33,6 +33,16 @@ type Yahoo struct {
 }
 
 func (y Yahoo) Fetch(ctx context.Context, symbol string, start, end time.Time) ([]Candle, error) {
+	return y.FetchInterval(ctx, symbol, start, end, "1h")
+}
+
+// FetchInterval is used for 5-minute live signals. Its results can include a
+// still-forming candle, which callers MUST discard before making a signal.
+func (y Yahoo) FetchInterval(ctx context.Context, symbol string, start, end time.Time, interval string) ([]Candle, error) {
+	if interval != "1h" && interval != "5m" {
+		return nil, errors.New("unsupported candle interval")
+	}
+
 	symbol = strings.ToUpper(strings.TrimSpace(symbol))
 	if symbol == "" || !start.Before(end) {
 		return nil, errors.New("invalid symbol or time range")
@@ -48,7 +58,7 @@ func (y Yahoo) Fetch(ctx context.Context, symbol string, start, end time.Time) (
 	q := u.Query()
 	q.Set("period1", fmt.Sprint(start.Unix()))
 	q.Set("period2", fmt.Sprint(end.Unix()))
-	q.Set("interval", "1h")
+	q.Set("interval", interval)
 	q.Set("includePrePost", "false")
 	q.Set("events", "div,splits")
 	u.RawQuery = q.Encode()

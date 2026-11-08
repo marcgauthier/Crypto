@@ -38,7 +38,7 @@ jobs:
       - name: Check persisted SQLite dashboard endpoints
         shell: bash
         run: |
-          go run ./cmd/cryptoweb --db ./data/findings.sqlite > /tmp/cryptoweb.log 2>&1 &
+          go run ./cmd/cryptoweb --history-only --db ./data/findings.sqlite > /tmp/cryptoweb.log 2>&1 &
           for i in $(seq 1 25); do
             if curl --fail --silent http://127.0.0.1:8080/api/groups > /tmp/groups.json; then break; fi
             sleep 2
