@@ -6,11 +6,31 @@ import(
  "fmt"
  "os"
  "strings"
+ "sort"
  "time"
  "github.com/marcgauthier/Crypto/internal/cache"
  "github.com/marcgauthier/Crypto/internal/market"
  "github.com/marcgauthier/Crypto/internal/stockrotation"
 )
+type buyHoldResult struct {ReturnPct float64 `json:"return_pct"`; MaxDrawdownPct float64 `json:"max_drawdown_pct"`}
+func buyHold(a,b []market.Candle,start,end time.Time,initial string)(buyHoldResult,error){
+  out:=buyHoldResult{}
+  bm:=map[int64]market.Candle{}
+  for _,v:=range b {if market.Valid(v){bm[v.Time.Unix()]=v}}
+  candles:=[]market.Candle{}
+  for _,v:=range a {if other,ok:=bm[v.Time.Unix()];ok&&market.Valid(v)&&!v.Time.Before(start)&&v.Time.Before(end){if initial=="MSTZ"{candles=append(candles,other)}else{candles=append(candles,v)}}}
+  sort.Slice(candles,func(i,j int)bool{return candles[i].Time.Before(candles[j].Time)})
+  if len(candles)<10{return out,fmt.Errorf("insufficient aligned candles")}
+  shares:=1/(candles[0].Open*1.001)
+  peak:=1.0
+  for _,v:=range candles{
+    equity:=shares*v.Close*0.999
+    if equity>peak{peak=equity}
+    if dd:=(peak-equity)/peak*100;dd>out.MaxDrawdownPct{out.MaxDrawdownPct=dd}
+    out.ReturnPct=(equity-1)*100
+  }
+  return out,nil
+}
 func run()error{
  endArg:=flag.String("end","2026-11-07","inclusive end")
  cutArg:=flag.String("train-until","2026-08-08","holdout begins")
@@ -32,6 +52,8 @@ func run()error{
   Initial string `json:"initial"`
   Training stockrotation.Result `json:"training"`
   Holdout stockrotation.Result `json:"holdout"`
+  SixMonths stockrotation.Result `json:"six_months"`
+  BuyHold buyHoldResult `json:"buy_hold"`
  }
  rows:=[]row{}
  for _,pairName:=range strings.Split(*pairsArg,","){
@@ -43,7 +65,9 @@ func run()error{
    for _,reverse:=range []bool{false,true}{
    train,err:=stockrotation.RunWithDirection(a,b,start,cut,1,10,initial,mode,reverse);if err!=nil{return err}
    test,err:=stockrotation.RunWithDirection(a,b,cut,end,1,10,initial,mode,reverse);if err!=nil{return err}
-   rows=append(rows,row{pairName,mode,reverse,initial,train,test})
+   six,err:=stockrotation.RunWithDirection(a,b,start,end,1,10,initial,mode,reverse);if err!=nil{return err}
+   hold,err:=buyHold(a,b,start,end,initial);if err!=nil{return err}
+   rows=append(rows,row{pairName,mode,reverse,initial,train,test,six,hold})
   }
  }
  }
