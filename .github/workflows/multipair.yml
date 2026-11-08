@@ -26,8 +26,8 @@ jobs:
           lines=['# Reverse 1% stock ETF pair rotation','Switch to opposite fund when held fund rises >=1% over prior completed trading day. 10bps per side.','']
           for x in d['results']:
             if x['mode']=='daily' and x['reverse']:
-              a,b=x['training'],x['holdout']
-              lines.append(f"{x['pair']} start {x['initial']}: training {a['return_pct']:+.2f}%, holdout {b['return_pct']:+.2f}%, DD {b['max_drawdown_pct']:.2f}%, switches {b['switches']}")
+              a,b=x['six_months'],x['buy_hold']
+              lines.append(f"{x['pair']} start {x['initial']}: rotation {a['return_pct']:+.2f}%, buyhold {b['return_pct']:+.2f}%, difference {a['return_pct']-b['return_pct']:+.2f}pp, rotation DD {a['max_drawdown_pct']:.2f}%, buyhold DD {b['max_drawdown_pct']:.2f}%, switches {a['switches']}")
           s='\n'.join(lines)
           print(s)
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
