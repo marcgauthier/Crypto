@@ -1,0 +1,31 @@
+name: MSTR 90d 5pct Swings
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths: ['cmd/mstr5swings/**','.github/workflows/mstr5swings.yml']
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go test ./cmd/mstr5swings/...
+      - run: |
+          mkdir -p results
+          go run ./cmd/mstr5swings > results/mstr5swings.json
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/mstr5swings.json'))
+          lines=[f"# MSTR 5% rises: {d['Start']} to {d['End']}",f"Completed nonoverlapping rises: {d['Count']}",'| Trough | Target hit | Low | Hit high | Rise | Elapsed hours |','|---|---|---:|---:|---:|---:|']
+          for r in d['Rises']:
+            lines.append(f"| {r['low_date']} | {r['hit_date']} | ${r['low']:.2f} | ${r['hit']:.2f} | {r['gain_pct']:.2f}% | {r['hours']:.1f} |")
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mstr5swings-results
+          path: results/mstr5swings.json

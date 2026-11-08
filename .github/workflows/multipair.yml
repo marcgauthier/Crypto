@@ -1,0 +1,39 @@
+name: Multi ETF reverse rotation
+on:
+  pull_request:
+    paths:
+      - 'cmd/multipairtest/**'
+      - 'internal/stockrotation/**'
+      - '.github/workflows/multipair.yml'
+  workflow_dispatch:
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./cmd/multipairtest/... ./internal/stockrotation/...
+      - run: mkdir -p results && go run ./cmd/multipairtest > results/pairs.json
+      - name: Summarize reversed daily signals
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/pairs.json'))
+          lines=['# 1% daily reversal: long vs inverse trade win rates','Only completed positions count. Profitable means exit proceeds exceed entry cost after 10bps per side.','']
+          for x in d['results']:
+            if x['mode']=='daily' and x['reverse']:
+              a,b=x['six_months'],x['buy_hold']
+              lines.append(f"{x['pair']} start {x['initial']}: long {a['long_wins']}/{a['long_trades']} ({100*a['long_wins']/a['long_trades'] if a['long_trades'] else 0:.1f}%), inverse {a['short_wins']}/{a['short_trades']} ({100*a['short_wins']/a['short_trades'] if a['short_trades'] else 0:.1f}%), return {a['return_pct']:+.2f}%")
+          s='\n'.join(lines)
+          print(s)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-pair-rotation
+          path: results/

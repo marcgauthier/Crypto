@@ -1,0 +1,39 @@
+name: Stock-price one percent rotation
+on:
+  pull_request:
+    paths:
+      - 'internal/stockrotation/**'
+      - 'cmd/stockrotationtest/**'
+      - '.github/workflows/stock_rotation.yml'
+  workflow_dispatch:
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./internal/stockrotation/... ./cmd/stockrotationtest/...
+      - run: mkdir -p results && go run ./cmd/stockrotationtest > results/stock_rotation.json
+      - name: Summary
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/stock_rotation.json'))
+          lines=['# Stock-price 1% decline rotation','When held stock declines >=1% over completed hourly bar or previous market session, sell it and buy other at next hourly open. 10 bps per side.','']
+          for row in d['results']:
+            a,b=row['training'],row['holdout']
+            lines.append(f"**{row['mode']} / reverse {row['reverse']} / start {row['initial']}**: training {a['return_pct']:+.2f}%, holdout {b['return_pct']:+.2f}%, holdout max DD {b['max_drawdown_pct']:.2f}%, switches {b['switches']}, MSTR sessions {b['mstr_sessions']}, MSTZ sessions {b['mstz_sessions']}.")
+          s='\n\n'.join(lines)+'\n'
+          print(s)
+          open('results/summary.md','w').write(s)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stock-price-one-percent-rotation
+          path: results/

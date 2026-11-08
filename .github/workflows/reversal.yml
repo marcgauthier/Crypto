@@ -1,0 +1,44 @@
+name: Confirmed reversal MSTR MSTZ holdout
+on:
+  pull_request:
+    paths:
+      - 'internal/rotation/**'
+      - 'cmd/reversaltest/**'
+      - '.github/workflows/reversal.yml'
+  workflow_dispatch:
+jobs:
+  holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./internal/rotation/... ./cmd/reversaltest/...
+      - name: Run fixed train/holdout
+        run: |
+          mkdir -p results
+          go run ./cmd/reversaltest --end 2026-11-07 --train-until 2026-08-08 > results/reversal.json
+      - name: Summarize
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/reversal.json'))
+          lines=['# MSTR/MSTZ mutually exclusive reversal holdout','Training May 8–Aug 7; holdout Aug 8–Nov 7, 2026. Hourly bars, 10 bps per side.','']
+          for k in ('training','holdout','fixed_holdout'):
+            r=d[k];p=r['params']
+            lines.append(f"**{k}**: return {r['return_pct']:+.2f}%, max DD {r['max_drawdown_pct']:.2f}%, closed trades {len(r['trades'])}, MSTR entries {r['entries'].get('MSTR',0)}, MSTZ entries {r['entries'].get('MSTZ',0)}, open {r['open_symbol'] or 'none'}.")
+            lines.append(f"Parameters: lookback={p['lookback']}, stable={p['stable_bars']}, max stable range={p['max_range_pct']}%, rebound={p['rebound_pct']}%, stop={p['stop_pct']}%.")
+          lines.append('Training candidates: '+str(d['train_trials']))
+          text='\n\n'.join(lines)+'\n'
+          print(text)
+          open('results/summary.md','w').write(text)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(text)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reversal-mstr-mstz
+          path: results/

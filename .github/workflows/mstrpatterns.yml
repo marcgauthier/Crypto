@@ -1,0 +1,38 @@
+name: MSTR 5pct Pattern Analysis
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths: ['cmd/mstrpatterns/**','.github/workflows/mstrpatterns.yml']
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go test ./cmd/mstrpatterns/...
+      - run: |
+          mkdir -p results
+          go run ./cmd/mstrpatterns > results/mstrpatterns.json
+          python3 - <<'PY'
+          import json,statistics,os,math
+          d=json.load(open('results/mstrpatterns.json'));ev=d['Events'];base=d['Baseline']
+          lines=[f"# MSTR 5% rebound trough patterns: {len(ev)} events; {len(base)} hourly baseline bars",
+            '| Indicator at trough | Event median | All-hours median | Events matching condition | Baseline matching |',
+            '|---|---:|---:|---:|---:|']
+          tests=[('Trend1','1d trend negative',lambda v:v<0),('Trend3','3d trend negative',lambda v:v<0),('Trend7','7d trend negative',lambda v:v<0),('Support7','Within 2% of prior 7d low',lambda v:abs(v)<=2),('Support30','Within 2% of prior 30d low',lambda v:abs(v)<=2),('Support90','Within 2% of prior 90d low',lambda v:abs(v)<=2),('Range7','Lower 25% of 7d range',lambda v:v<=25),('Range30','Lower 25% of 30d range',lambda v:v<=25),('Range90','Lower 25% of 90d range',lambda v:v<=25),('RSI14','RSI below 40',lambda v:v<40),('MA20Dist','Below 20d moving average',lambda v:v<0)]
+          for field,label,cond in tests:
+            a=[r[field] for r in ev if math.isfinite(r[field])];b=[r[field] for r in base if math.isfinite(r[field])]
+            if not a or not b:continue
+            lines.append(f"| {label} | {statistics.median(a):+.2f} | {statistics.median(b):+.2f} | {sum(cond(v) for v in a)}/{len(a)} | {sum(cond(v) for v in b)}/{len(b)} |")
+          lines+=['','## Event detail','| Low time | 1d trend | 3d trend | 7d trend | 7d low distance | 30d low distance | 90d low distance | RSI14 |','|---|---:|---:|---:|---:|---:|---:|---:|']
+          for r in ev:lines.append(f"| {r['time']} | {r['Trend1']:+.1f}% | {r['Trend3']:+.1f}% | {r['Trend7']:+.1f}% | {r['Support7']:+.1f}% | {r['Support30']:+.1f}% | {r['Support90']:+.1f}% | {r['RSI14']:.1f} |")
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mstrpatterns-results
+          path: results/mstrpatterns.json

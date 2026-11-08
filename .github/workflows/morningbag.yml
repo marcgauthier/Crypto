@@ -1,0 +1,35 @@
+name: MSTR MSTZ Morning Bag
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths:
+      - 'cmd/morningbag/**'
+      - '.github/workflows/morningbag.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go test ./cmd/morningbag/... ./internal/market/...
+      - name: Run three month morning strategy
+        run: |
+          mkdir -p results
+          go run ./cmd/morningbag > results/morningbag.json
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/morningbag.json'))
+          lines=['# Morning trend MSTR/MSTZ three-month benchmark',f"Period: {d['Start']} to {d['End']}; {d['SignalDays']} morning signals; {d['Entries']} purchases",f"Strategy: {d['ReturnPct']:+.2f}%; MSTR buy and hold: {d['BuyHoldMSTRPct']:+.2f}%; max drawdown: {d['MaxDrawdownPct']:.2f}%",'| Asset | Bought | Sold at target | Bags | Realized P&L | Unrealized P&L | Bag cost | Bag value |','|---|---:|---:|---:|---:|---:|---:|---:|']
+          for a in d['Assets']:
+            lines.append(f"| {a['symbol']} | {a['buys']} | {a['sold']} | {a['bags']} | ${a['realized']:+.2f} | ${a['unrealized']:+.2f} | ${a['bag_cost']:.2f} | ${a['bag_value']:.2f} |")
+          lines.append(f"Cash ${d['Cash']:.2f}; equity ${d['Equity']:.2f}; skipped for no cash: {d['SkippedNoCash']}")
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: morningbag-results
+          path: results/morningbag.json

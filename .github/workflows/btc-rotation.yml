@@ -1,0 +1,33 @@
+name: BTC 1% Rotation Benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [experiment/mstr-mstz-confirmed-reversal]
+    paths:
+      - 'cmd/btctest/**'
+      - '.github/workflows/btc-rotation.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - run: go test ./cmd/btctest/... ./internal/market/...
+      - run: mkdir -p results && go run ./cmd/btctest > results/btc.json
+      - name: Summary
+        run: |
+          python3 - <<'PY'
+          import json,os
+          d=json.load(open('results/btc.json'))
+          a=d['buy_hold'];b=d['switch_1pct']
+          lines=['# BTC six-month 1% rotation','Period: '+d['start']+' to '+d['end'],'Days: '+str(d['days']),'Buy and hold: '+f"{a['return_pct']:+.2f}% return, {a['max_dd_pct']:.2f}% max DD",'Switching: '+f"{b['return_pct']:+.2f}% return, {b['max_dd_pct']:.2f}% max DD, {b['switches']} switches",'Assumptions: '+d['assumptions']]
+          print('\n'.join(lines))
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write('\n\n'.join(lines))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: btc-rotation-results
+          path: results/btc.json
