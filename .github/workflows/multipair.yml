@@ -23,11 +23,11 @@ jobs:
           python3 - <<'PY'
           import json,os
           d=json.load(open('results/pairs.json'))
-          lines=['# Daily reversal: 1% versus 1.5%','Switch at next open after held ETF daily gain reaches threshold; 10bps per side.','']
+          lines=['# 1% daily reversal: long vs inverse trade win rates','Only completed positions count. Profitable means exit proceeds exceed entry cost after 10bps per side.','']
           for x in d['results']:
             if x['mode']=='daily' and x['reverse']:
               a,b=x['six_months'],x['buy_hold']
-              lines.append(f"{x['pair']} start {x['initial']}: 1% {a['return_pct']:+.2f}% (DD {a['max_drawdown_pct']:.2f}%, switches {a['switches']}), 1.5% {x['one_point_five']['return_pct']:+.2f}% (DD {x['one_point_five']['max_drawdown_pct']:.2f}%, switches {x['one_point_five']['switches']}), difference {x['one_point_five']['return_pct']-a['return_pct']:+.2f}pp")
+              lines.append(f"{x['pair']} start {x['initial']}: long {a['long_wins']}/{a['long_trades']} ({100*a['long_wins']/a['long_trades'] if a['long_trades'] else 0:.1f}%), inverse {a['short_wins']}/{a['short_trades']} ({100*a['short_wins']/a['short_trades'] if a['short_trades'] else 0:.1f}%), return {a['return_pct']:+.2f}%")
           s='\n'.join(lines)
           print(s)
           with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:f.write(s)
