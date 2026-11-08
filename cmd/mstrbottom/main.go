@@ -16,10 +16,10 @@ func run()error{
  }
  sort.Slice(days,func(i,j int)bool{return days[i].time.Before(days[j].time)})
  out:=[]row{}
- for i:=30;i+1<len(days);i++{
+ for i:=7;i+1<len(days);i++{
   d:=days[i];if d.time.Before(start)||!d.time.Before(end){continue}
-  prev:=days[i-30].low;for j:=i-29;j<i;j++{if days[j].low<prev{prev=days[j].low}}
-  if d.low>prev||d.close<=d.open{continue}
+  prev:=days[i-7].low;for j:=i-6;j<i;j++{if days[j].low<prev{prev=days[j].low}}
+  if d.low>prev*1.01||d.close<d.open*0.995{continue}
   r:=row{Date:d.date,EntryDate:days[i+1].date,Entry:days[i+1].open,SignalLow:d.low,Prev30Low:prev,NoLowerLow5:true,NoLowerLow10:true}
   lower10:=false;lower20:=false
   for j:=i+1;j<len(days)&&j<=i+20;j++{
