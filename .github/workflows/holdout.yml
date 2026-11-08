@@ -1,0 +1,54 @@
+name: Fixed 3-month holdout (2026)
+on:
+  pull_request:
+    paths:
+      - 'internal/scanner/**'
+      - '.github/workflows/holdout.yml'
+  workflow_dispatch:
+jobs:
+  fixed-holdout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.10'
+      - run: go mod tidy
+      - name: Optimize May 8-Aug 7, test Aug 8-Nov 7 (SOXL and SOXS)
+        run: |
+          mkdir -p results
+          go run ./cmd/cryptoscan --pair SOXL:SOXS --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --no-save --json > results/soxl-soxs.json
+      - name: Same fixed dates (MSTR and MSTZ)
+        run: |
+          go run ./cmd/cryptoscan --pair MSTR:MSTZ --months 6 --end 2026-11-07 --train-until 2026-08-08 --lookback 24 --cost-bps 10 --no-save --json > results/mstr-mstz.json
+      - name: Print reproducible test report
+        run: |
+          python3 - <<'PY'
+          import json
+          paths = ['results/soxl-soxs.json', 'results/mstr-mstz.json']
+          lines = [
+            '# Fixed three-month out-of-sample test (Nov 8, 2026)',
+            'Train 2026-05-08 through 2026-08-07 UTC; freeze parameters; test 2026-08-08 through 2026-11-07 UTC.',
+            'Hourly Yahoo candles; close-of-hour signal filled next hour open; 10 bps transaction cost per side; open positions marked to market.',
+            '',
+            '| Symbol | Buy drop | Sell gain | Train return | Test return | Test buy-and-hold | Test trades | Max drawdown | Open position | Test candles |',
+            '|---|---:|---:|---:|---:|---:|---:|---:|---|---:|'
+          ]
+          for path in paths:
+            report=json.load(open(path))
+            for leg in report['legs']:
+              tr=leg['training']; te=leg['out_of_sample']; best=leg['best_parameters']
+              lines.append(f"| {leg['symbol']} | {best['drop_pct']:.1f}% | {best['gain_pct']:.1f}% | {tr['return_pct']:+.2f}% | {te['return_pct']:+.2f}% | {te['buy_hold_pct']:+.2f}% | {te['trades']} | {te['max_drawdown_pct']:.2f}% | {te['open_position']} | {leg['candles']} |")
+            lines.append(f"\n{report['pair']} combined 50/50 test return: {report['combined_test_return_pct']:+.2f}% and drawdown {report['combined_test_max_drawdown_pct']:.2f}%.\n")
+          text='\n'.join(lines)+'\n'
+          print(text,flush=True)
+          open('results/report.md','w').write(text)
+          with open(__import__('os').environ['GITHUB_STEP_SUMMARY'],'a') as f: f.write(text)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 2026-fixed-holdout
+          path: results/
+          if-no-files-found: ignore
