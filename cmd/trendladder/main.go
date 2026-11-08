@@ -31,9 +31,10 @@ func run()error{
  endArg:=flag.String("end","2026-11-07","inclusive ending date")
  trendArg:=flag.Int("trend-hours",4,"lookback hours for MSTR direction")
  feeArg:=flag.Float64("fee-bps",10,"fee per side in basis points")
+ monthsArg:=flag.Int("months",3,"backtest duration in calendar months")
  flag.Parse()
  day,err:=time.Parse("2006-01-02",*endArg);if err!=nil{return err}
- end:=day.AddDate(0,0,1);start:=end.AddDate(0,-6,0)
+ end:=day.AddDate(0,0,1);start:=end.AddDate(0,-*monthsArg,0)
  // Fetch extra history for trend warmup; only score the six-month window.
  fetchStart:=start.AddDate(0,0,-7)
  ctx,cancel:=context.WithTimeout(context.Background(),3*time.Minute);defer cancel()
@@ -52,7 +53,7 @@ func run()error{
  firstOpen:=bars[first].a.Open
  buyHold:=(bars[len(bars)-1].a.Close/firstOpen*(1-fee)/(1+fee)-1)*100
  results:=[]result{}
- for _,interval:=range []int{1,4,8}{
+ for _,interval:=range []int{4,8}{
   cash:=10000.0;initial:=cash;peak:=initial;maxDD:=0.0;open:=[]position{};out:=result{IntervalHours:interval}
   nextEntry:=time.Time{}
   for i:=first;i<len(bars);i++{
