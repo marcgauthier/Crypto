@@ -32,13 +32,8 @@ func RunTrailing(a,b []market.Candle,start,end time.Time,activation,trail,stop,c
   newSession:=session!=lastSession
   if newSession&&lastSession!=""{olderClose=priorClose;haveOlder=havePrior;priorClose=lastPair;havePrior=true}
   if newSession{lastSession=session}
-  if pending{
-   proceeds:=shares*px(p,held,true)*(1-rate)
-   if held=="MSTR"{held="MSTZ"}else{held="MSTR"}
-   entry=px(p,held,true)
-   shares=proceeds/(entry*(1+rate))
-   armed=false;high=0;pending=false;out.Switches++
-  }
+  // Evaluate completed bars before executing at the current bar open.
+  // The evaluation block below sets pending for this opening.
   // Completed-bar exit evaluation; pending execution is at the next bar open.
   eval:=false;var current,previous pair
   if mode=="hourly"&&i>=1{current=ps[i-1];if i>=2{previous=ps[i-2];eval=true}}
@@ -48,6 +43,13 @@ func RunTrailing(a,b []market.Candle,start,end time.Time,activation,trail,stop,c
    if old>0&&!armed&&(now/old-1)*100>=activation{armed=true;high=now}
    if armed&&now>high{high=now}
    if now<=entry*(1-stop/100)||(armed&&now<=high*(1-trail/100)){pending=true}
+  }
+  if pending{
+   proceeds:=shares*px(p,held,true)*(1-rate)
+   if held=="MSTR"{held="MSTZ"}else{held="MSTR"}
+   entry=px(p,held,true)
+   shares=proceeds/(entry*(1+rate))
+   armed=false;high=0;pending=false;out.Switches++
   }
   if newSession{if held=="MSTR"{out.MSTRSessions++}else{out.MSTZSessions++}}
   equity:=shares*px(p,held,false)*(1-rate)
